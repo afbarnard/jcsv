@@ -40,7 +40,7 @@ public class LexerTest {
     }
 
     public void checkTokenStream(Object[][] tokenStream) {
-        long position = 1;
+        long position = 0;
         long line = 1;
         int column = 1;
 
@@ -95,8 +95,7 @@ public class LexerTest {
         Object[][] tokens = {
             {"\n", Token.Type.NEWLINE},
             {"\r", Token.Type.NEWLINE},
-            {"\r", Token.Type.NEWLINE},
-            {"\n", Token.Type.NEWLINE},  // FIXME
+            {"\r\n", Token.Type.NEWLINE},
         };
         lexer = makeLexer(TestText.newlines);
         checkTokenStream(tokens);
@@ -104,7 +103,7 @@ public class LexerTest {
 
     @Test public void readToken_space() {
         lexer = makeLexer(TestText.space);
-        checkToken("\t\u000b\f \u00a0", Token.Type.SPACE, 1, 5, 1, 1,
+        checkToken("\t\u000b\f \u00a0", Token.Type.SPACE, 0, 5, 1, 1,
                    lexer.readToken(), 0);
         assertNull(lexer.readToken());
     }
@@ -167,7 +166,7 @@ public class LexerTest {
     @Test public void readToken_singleData() {
         lexer = makeLexer(TestText.singleData);
 
-        checkToken("single-data", Token.Type.CONTENT, 1, 11, 1, 1,
+        checkToken("single-data", Token.Type.CONTENT, 0, 11, 1, 1,
                    lexer.readToken(), 0);
         assertNull(lexer.readToken());
     }
@@ -232,8 +231,7 @@ public class LexerTest {
             {",", Token.Type.DELIMITER},
             {"./", Token.Type.CONTENT},
             {" ", Token.Type.SPACE},
-            {"\r", Token.Type.NEWLINE},
-            {"\n", Token.Type.NEWLINE},  // FIXME
+            {"\r\n", Token.Type.NEWLINE},
             {"~!@", Token.Type.CONTENT},
             {"#", Token.Type.COMMENT},
             {"$%^&*()_+\bQWERTYUIOP{}|ASDFGHJKL:", Token.Type.CONTENT},

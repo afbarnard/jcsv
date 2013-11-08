@@ -9,6 +9,9 @@ else
 junitJar := $(firstword $(junitJar))
 endif
 
+# Compiler options (e.g. -source 5)
+javacOpts := -Xlint
+
 # Project layout
 javaSrcDir := src
 javaTstDir := src
@@ -56,12 +59,12 @@ listconfig:
 
 # General Java compilation
 %.class: %.java
-	javac -cp $(classpath) -source 5 -Xlint $<
+	javac $(javacOpts) -cp $(classpath) $<
 
 # Dependencies
 $(javaSrcDir)/$(javaPkgDir)/ArrayQueue.class:
 $(javaSrcDir)/$(javaPkgDir)/Dialect.class:
-$(javaSrcDir)/$(javaPkgDir)/Lexer.class: $(addprefix $(javaSrcDir)/$(javaPkgDir)/,Dialect.class StreamBufferChar.class Token.class)
+$(javaSrcDir)/$(javaPkgDir)/Lexer.class: $(addprefix $(javaSrcDir)/$(javaPkgDir)/,ArrayQueue.class Dialect.class StreamBufferChar.class Token.class)
 $(javaSrcDir)/$(javaPkgDir)/StreamBuffer.class:
 $(javaSrcDir)/$(javaPkgDir)/Token.class:
 

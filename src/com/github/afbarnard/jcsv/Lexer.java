@@ -9,201 +9,292 @@ import java.util.Deque;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
+// TODO should "position" start at 1 or 0? If zero, rename to "offset"?
+
 public class Lexer implements Iterator<Token>, Iterable<Token> {
 
     private Dialect dialect;
     private Reader reader;
     private StreamBufferChar buffer;
     private Deque<Token> tokenPool;
+    private ArrayQueue<Token> tokenQueue;
 
-    private long position = 0;  // The position is the number of the current character
-    private Token.Type charType = Token.Type.NONE;
-
-    private long lastNewlinePosition = 0;
-
-    private long tokenPosition = 1;
-    private long line = 1;
-    private long tokenLine = 1;
-    private int tokenColumn = 1;
-    private Token.Type tokenType = Token.Type.NONE;
-
-    private Token nextToken;
-
-    public Lexer(Dialect dialect, Reader reader, int bufferSize) {
+    public Lexer(Dialect dialect, Reader reader, int bufferSize, int queueSize) {
         this.dialect = dialect;
         this.reader = reader;
         buffer = new StreamBufferChar(bufferSize);
         tokenPool = new ArrayDeque<Token>(100);
+        tokenQueue = new ArrayQueue<Token>(queueSize);
     }
 
     public Lexer(Dialect dialect, Reader reader) {
-        this(dialect, reader, 1000);
+        this(dialect, reader, 1000, 100);
     }
 
     public Iterator<Token> iterator() {
+        // Initialize the iterator by trying to read input
+        try {
+            readTokens();
+        } catch (IOException e) {
+            // FIXME
+        }
         return this;
     }
 
+    /**
+     * @inheritdoc
+     *
+     * This is a fast, O(1) operation as it should be.
+     */
     public boolean hasNext() {
-        // Try to read if nothing has been read yet
-        if (position == 0) {
-            nextToken = readToken();
-            return nextToken != null;
-        }
-        return charType != Token.Type.EOF;
+        // Queue could be empty with more input, so also check for EOF
+        return tokenQueue.size() > 0 || charCode != -1;
     }
 
+    /**
+     * @inheritdoc
+     *
+     * Pops and returns a token from the token queue.  This is a fast,
+     * O(1) operation if a token is available in the queue.  Otherwise
+     * {@link #readTokens()} is invoked.  You may invoke {@code
+     * readTokens()} yourself at opportune times if you need to
+     * guarantee O(1) behavior for this method.
+     */
     public Token next() {
-        // Check a next token exists
-        if (!hasNext())
-            throw new NoSuchElementException("No next token.");
-
-        // Return a token if one has already been read
-        if (nextToken != null) {
-            Token token = nextToken;
-            nextToken = null;
-            return token;
+        // Read more tokens if needed
+        if (tokenQueue.size() <= 0) {
+            try {
+                readTokens();
+            } catch (IOException e) {
+                // FIXME
+            }
         }
-
-        // Return a fresh token
-        return readToken();
+        return tokenQueue.get();
     }
 
     public void remove() {
         throw new UnsupportedOperationException();
     }
 
-    public Token readToken() {
-        // Return null if at EOF
-        if (charType == Token.Type.EOF) {
-            return null;
+    /*
+     * The Lexing Algorithm
+     * --------------------
+     *
+     * The general idea of the lexing algorithm is to break the input
+     * into atomic pieces (tokens).  (It is then the parser's job to
+     * assemble those tokens into meaningful pieces.)  The atoms are the
+     * single character tokens (delimiter, quote, escape, comment),
+     * newlines (which may be one or two characters long), and white
+     * space and content (which may be arbitrary runs of characters).
+     *
+     * The idea of the lexing algorithm is to accumulate characters
+     * until a longest-possible token is formed, yield that token, and
+     * repeat until there is no more input.
+     *
+     * The specific lexing algorithm follows.
+     *
+     * do:
+     *     read a character
+     *     if at EOF:
+     *         continue
+     *     put the character in the buffer
+     *     determine the type of character
+     *     if the type of the token being formed is none:
+     *         this is the first character, so continue
+     *     else if the type of the token being formed is the same as the type of the character:
+     *         if the token type is single-character (incl. newline)
+     *         +or the two characters being considered make a newline:
+     *             yield the formed token and start the next token
+     *         else continue to accumulate
+     *     else the type is different and a token has been formed:
+     *         yield the token and start the next token
+     * loop while not at EOF
+     *
+     * This algorithm must maintain a one-character read-ahead in order
+     * to find the longest possible tokens.  As a result, any token
+     * yielded during the current iteration does not include the current
+     * character being processed.  This means that the current character
+     * either extends or terminates the current token.  Consequently,
+     * and as a matter of consistency, even if the current character is
+     * a one-character token it will not be yielded until the following
+     * iteration.
+     *
+     * While the description above is a convenient way to think of the
+     * lexing algorithm, and indeed it could be implemented as above in
+     * some languages, this class implements the algorithm (essentially)
+     * as an iterator and so needs to keep state in order to enter and
+     * exit the loop correctly.  Unfortunately that complicates things a
+     * bit and makes this description especially beneficial.
+     */
+
+    /*
+     * These variables are the "iterator" state for readTokens().  They
+     * are here so they are separated from the other class members.
+     *
+     * To maintain the token processing state, there are essentially two
+     * places in the input to keep track of, the beginning of the
+     * current token and the current character.  Their types also must
+     * be tracked.
+     *
+     * Keep track of the input location in terms of lines and columns.
+     * However, compute the column numbers so input location state only
+     * needs to be updated upon encountering a newline.
+     */
+
+    private long line = 1;
+    private long lineStartPosition = 0;
+    private int charCode = -2;  // -2: nothing has been read yet
+    private long tokenPosition = 0;
+    private long charPosition = -1;
+    private char tokenChar;
+    private char thisChar;
+    private Token.Type tokenType = Token.Type.NONE;
+    private Token.Type charType;
+
+    /**
+     * Fills the token queue with tokens.  Quits when the queue is full
+     * or at EOF.  Call again to read more tokens.  Do not call this
+     * method unless you need {@link #next()} to be a guaranteed O(1)
+     * operation.
+     */
+    public void readTokens() throws IOException {
+        // Quit if at EOF or if there is no space in the token queue
+        if (charCode == -1 || tokenQueue.freeSize() <= 0) {
+            return;
+        }
+        // OK, there are characters to be read and space to record the
+        // tokens they make
+
+        // Only read a character before the loop at the very beginning
+        // of input.  Otherwise an unprocessed character already exists.
+        // Really this is a do-while situation (read character, process
+        // it), but it has to be turned into a while loop for Java.
+        // Taking this approach allows a single conditional, here,
+        // outside the loop.
+        if (charCode == -2) {
+            charCode = reader.read();
         }
 
-        // Locals
-        int charCode = 0;
-        char thisChar;
-        Token.Type thisCharType;
+        // Loop to process characters into tokens until the queue is
+        // full or EOF
+        while (charCode >= 0 && tokenQueue.freeSize() > 0) {
+            // Convert the code and put the character in the buffer
+            thisChar = (char) charCode;
+            buffer.put(thisChar);
+            charPosition++;
 
-        // Read characters until a complete token has been formed.  This
-        // loop is do-while style because a character always needs to be
-        // read in order to complete a token.
-        boolean tokenComplete = false;
-        while (!tokenComplete) {
-            // Read the next character
+            // Determine the type of character.  The cases are ordered
+            // (as much as possible) with the (expected) most frequent
+            // first.
+            switch (thisChar) {
+            case ' ':
+            case '\t':
+            case '\u000b':  // Vertical tab
+            case '\f':
+            case '\u00a0':  // Non-breaking space
+                charType = Token.Type.SPACE;
+                break;
+            case '\n':
+            case '\r':
+                charType = Token.Type.NEWLINE;
+                break;
+            default:
+                if (thisChar == dialect.delimiter)
+                    charType = Token.Type.DELIMITER;
+                else if (thisChar == dialect.quote)
+                    charType = Token.Type.QUOTE;
+                else if (thisChar == dialect.escape)
+                    charType = Token.Type.ESCAPE;
+                else if (thisChar == dialect.comment)
+                    charType = Token.Type.COMMENT;
+                else
+                    charType = Token.Type.CONTENT;
+            }
+
+            // Determine if a token has been formed
+            switch (tokenType) {
+            case DELIMITER:
+            case QUOTE:
+            case ESCAPE:
+            case COMMENT:
+                // Single-character tokens
+                processToken();
+                break;
+            case NEWLINE:
+                // Single- or double-character token
+                if (tokenType != charType || tokenChar != '\r' || thisChar != '\n') {
+                    processToken();
+                }
+                break;
+            case NONE:
+                // First token
+                tokenChar = thisChar;
+                tokenType = charType;
+                break;
+            default:
+                // Arbitrary-length tokens (space or content)
+                if (tokenType != charType) {
+                    processToken();
+                }
+            }
+
+            // Get the next character
+            charCode = reader.read();
+        }
+        // Either the token queue is full or EOF
+
+        // If EOF, process the last token.  An unprocessed token exists
+        // if the input was not empty.
+        if (charCode == -1 && charPosition > -1) {
+            charPosition++;
+            processToken();
+        }
+    }
+
+    /**
+     * Adds a completed token to the queue and updates necessary state.
+     */
+    private void processToken() {
+        // Get a token to use
+        Token token;
+        if (tokenPool.isEmpty()) {
+            token = new Token();
+        } else {
+            token = tokenPool.pop();
+        }
+        // Populate the token
+        token.type = tokenType;
+        token.position = tokenPosition;
+        token.length = (int)(charPosition - tokenPosition);
+        token.line = line;
+        token.column = (int)(tokenPosition - lineStartPosition + 1);
+        // Add it to the queue
+        tokenQueue.put(token);
+        // Update input location
+        if (tokenType == Token.Type.NEWLINE) {
+            line++;
+            lineStartPosition = charPosition;
+        }
+        // Update token state
+        tokenChar = thisChar;
+        tokenType = charType;
+        tokenPosition = charPosition;
+    }
+
+    public Token readToken() {
+        // Read more tokens if needed
+        if (tokenQueue.size() <= 0) {
             try {
-                charCode = reader.read();
+                readTokens();
             } catch (IOException e) {
                 // FIXME
             }
-            position++;
-
-            // Process the character if not EOF
-            if (charCode >= 0) {
-                // Record the character
-                thisChar = (char) charCode;
-                buffer.put(thisChar);
-
-                // Determine the type of character.  The cases are
-                // ordered with the (expected) most frequent first.
-                switch (thisChar) {
-                case ' ':
-                case '\t':
-                case '\u000b':  // Vertical tab
-                case '\f':
-                case '\u00a0':
-                    thisCharType = Token.Type.SPACE;
-                    break;
-                case '\n':
-                case '\r':
-                    thisCharType = Token.Type.NEWLINE;
-                    break;
-                default:
-                    if (thisChar == dialect.delimiter)
-                        thisCharType = Token.Type.DELIMITER;
-                    else if (thisChar == dialect.quote)
-                        thisCharType = Token.Type.QUOTE;
-                    else if (thisChar == dialect.escape)
-                        thisCharType = Token.Type.ESCAPE;
-                    else if (thisChar == dialect.comment)
-                        thisCharType = Token.Type.COMMENT;
-                    else
-                        thisCharType = Token.Type.CONTENT;
-                }
-
-                // Determine if this character starts a new token and
-                // therefore a token is complete.  A token is complete
-                // if this character is a single-character token
-                // (automatically separating it from the previous token)
-                // or if this character is content or space and the
-                // previous character was a different type.  A token is
-                // not complete if this is the first character.
-                if (charType == Token.Type.NONE) {
-                    // 'tokenComplete' stays false.  Initialize the
-                    // token type.
-                    tokenType = thisCharType;
-                } else {
-                    switch (thisCharType) {
-                    case CONTENT:
-                    case SPACE:
-                        tokenComplete = (charType != thisCharType);
-                        break;
-                    case DELIMITER:
-                    case NEWLINE:
-                    case QUOTE:
-                    case ESCAPE:
-                    case COMMENT:
-                        tokenComplete = true;
-                        break;
-                    }
-                }
-
-                // Bring the character type at position up to date now
-                // that prev/next comparison complete
-                charType = thisCharType;
-            } else {
-                // Record EOF
-                charType = Token.Type.EOF;
-                tokenComplete = true;
-            }
         }
-
-        // Check for empty input and return null rather than creating a
-        // zero-length token
-        if (charType == Token.Type.EOF && position == 1) {
-            return null;
-        }
-
-        // A complete, non-trivial token is in the buffer.  Make a token
-        // object for it.
-        Token token = makeToken();
-        token.position = tokenPosition;
-        token.line = tokenLine;
-        token.column = tokenColumn;
-        token.type = tokenType;
-        token.length = (int)(position - tokenPosition);
-
-        // Keep track of lines in a way that works with the
-        // one-character lookahead scheme
-        if (tokenType == Token.Type.NEWLINE) {
-            line++;
-            lastNewlinePosition = position - 1;
-        }
-
-        // This character is the start of the next token
-        tokenPosition = position;
-        tokenLine = line;
-        tokenColumn = (int)(position - lastNewlinePosition);
-        tokenType = charType;
-
-        // Return the token
-        return token;
-    }
-
-    private Token makeToken() {
-        if (tokenPool.isEmpty()) {
-            return new Token();
+        // Return the next token or null if none
+        if (tokenQueue.size() > 0) {
+            return tokenQueue.get();
         } else {
-            return tokenPool.pop();
+            return null;
         }
     }
 
@@ -213,7 +304,7 @@ public class Lexer implements Iterator<Token>, Iterable<Token> {
     }
 
     public void free(long position) {
-        buffer.free(position - 1);
+        buffer.free(position);
     }
 
     public String getString(Token token) {
@@ -223,8 +314,7 @@ public class Lexer implements Iterator<Token>, Iterable<Token> {
     public String getString(long position, int length) {
         char[] characters = new char[length];
         for (int offset = 0; offset < length; offset++) {
-            // Subtract 1 because StreamBuffer is zero-indexed
-            characters[offset] = buffer.getAt(position + offset - 1);
+            characters[offset] = buffer.getAt(position + offset);
         }
         return new String(characters);
     }
