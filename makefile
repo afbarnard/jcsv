@@ -59,10 +59,16 @@ listconfig:
 	javac -cp $(classpath) -source 5 -Xlint $<
 
 # Dependencies
+$(javaSrcDir)/$(javaPkgDir)/Dialect.class:
+$(javaSrcDir)/$(javaPkgDir)/Lexer.class: $(addprefix $(javaSrcDir)/$(javaPkgDir)/,Dialect.class StreamBufferChar.class Token.class)
 $(javaSrcDir)/$(javaPkgDir)/StreamBuffer.class:
+$(javaSrcDir)/$(javaPkgDir)/Token.class:
 
-# Tests' dependencies
+# Tests' dependencies.  These have to be listed explicitly (not a
+# pattern rule) for make to recognize and use them.
+$(javaSrcDir)/$(javaPkgDir)/LexerTest.class: $(addprefix $(javaSrcDir)/$(javaPkgDir)/,Lexer.class TestText.class)
 $(javaSrcDir)/$(javaPkgDir)/StreamBufferTest.class: $(javaSrcDir)/$(javaPkgDir)/StreamBuffer.class
+$(javaSrcDir)/$(javaPkgDir)/TestText.class:
 
 #####
 # JUnit
@@ -70,6 +76,17 @@ $(javaSrcDir)/$(javaPkgDir)/StreamBufferTest.class: $(javaSrcDir)/$(javaPkgDir)/
 # Run unit tests
 tests: $(javaTstClasses)
 	java -cp $(classpath) org.junit.runner.JUnitCore $(subst /,.,$(subst $(javaSrcDir)/,,$(javaTstClasses:.class=)))
+
+#####
+# Primitive versions of generic classes
+
+# Name, constructors: 'StreamBuffer(<E>)?' -> 'StreamBufferChar'
+# Type: '?E?' -> '?char?'
+# Array: 'Object[' -> 'char['
+# Remove unnecessary suppression of unchecked cast.
+# Remove redundant cast.
+$(javaSrcDir)/$(javaPkgDir)/StreamBufferChar.java: $(javaSrcDir)/$(javaPkgDir)/StreamBuffer.java
+	sed -e 's/StreamBuffer\(<E>\)\?/StreamBufferChar/' -e 's/\(\W\)E\(\W\)/\1char\2/' -e 's/Object\[/char[/g' -e '/@SuppressWarnings("unchecked")/ d' -e 's/(char)//' $< > $@
 
 
 ########################################
@@ -81,4 +98,5 @@ clean:
 
 # Named allclean to distinguish from clean* when typing
 allclean: clean
+	@rm -f $(javaSrcDir)/$(javaPkgDir)/StreamBufferChar.java
 	@find -name '*~' -delete
