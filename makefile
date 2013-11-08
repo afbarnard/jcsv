@@ -59,6 +59,7 @@ listconfig:
 	javac -cp $(classpath) -source 5 -Xlint $<
 
 # Dependencies
+$(javaSrcDir)/$(javaPkgDir)/ArrayQueue.class:
 $(javaSrcDir)/$(javaPkgDir)/Dialect.class:
 $(javaSrcDir)/$(javaPkgDir)/Lexer.class: $(addprefix $(javaSrcDir)/$(javaPkgDir)/,Dialect.class StreamBufferChar.class Token.class)
 $(javaSrcDir)/$(javaPkgDir)/StreamBuffer.class:
@@ -66,6 +67,7 @@ $(javaSrcDir)/$(javaPkgDir)/Token.class:
 
 # Tests' dependencies.  These have to be listed explicitly (not a
 # pattern rule) for make to recognize and use them.
+$(javaSrcDir)/$(javaPkgDir)/ArrayQueueTest.class: $(javaSrcDir)/$(javaPkgDir)/ArrayQueue.class
 $(javaSrcDir)/$(javaPkgDir)/LexerTest.class: $(addprefix $(javaSrcDir)/$(javaPkgDir)/,Lexer.class TestText.class)
 $(javaSrcDir)/$(javaPkgDir)/StreamBufferTest.class: $(javaSrcDir)/$(javaPkgDir)/StreamBuffer.class
 $(javaSrcDir)/$(javaPkgDir)/TestText.class:
