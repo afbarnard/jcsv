@@ -271,4 +271,90 @@ public class LexerTest {
         lexer = makeLexer(text);
         checkTokenStream(tokens);
     }
+
+    @Test public void iterator_poem128() {
+        Object[][] tokens = {
+            {"one", Token.Type.CONTENT},
+            {",", Token.Type.DELIMITER},
+            {" ", Token.Type.SPACE},
+            {"two", Token.Type.CONTENT},
+            {",", Token.Type.DELIMITER},
+            {" ", Token.Type.SPACE},
+            {"space", Token.Type.CONTENT},
+            {" ", Token.Type.SPACE},
+            {"for", Token.Type.CONTENT},
+            {" ", Token.Type.SPACE},
+            {"you", Token.Type.CONTENT},
+            {"  ", Token.Type.SPACE},
+            {",", Token.Type.DELIMITER},
+            {"\n", Token.Type.NEWLINE},
+            {"three", Token.Type.CONTENT},
+            {",", Token.Type.DELIMITER},
+            {"four", Token.Type.CONTENT},
+            {",", Token.Type.DELIMITER},
+            {" ", Token.Type.SPACE},
+            {"who", Token.Type.CONTENT},
+            {" ", Token.Type.SPACE},
+            {"wants", Token.Type.CONTENT},
+            {" ", Token.Type.SPACE},
+            {"more?", Token.Type.CONTENT},
+            {",", Token.Type.DELIMITER},
+            {" ", Token.Type.SPACE},
+            {"???", Token.Type.CONTENT},
+            {"\n", Token.Type.NEWLINE},
+            {" ", Token.Type.SPACE},
+            {"five", Token.Type.CONTENT},
+            {",", Token.Type.DELIMITER},
+            {" ", Token.Type.SPACE},
+            {"six", Token.Type.CONTENT},
+            {",", Token.Type.DELIMITER},
+            {" ", Token.Type.SPACE},
+            {"call", Token.Type.CONTENT},
+            {" ", Token.Type.SPACE},
+            {"it", Token.Type.CONTENT},
+            {" ", Token.Type.SPACE},
+            {"quits!", Token.Type.CONTENT},
+            {" ", Token.Type.SPACE},
+            {",", Token.Type.DELIMITER},
+            {" ", Token.Type.SPACE},
+            {"...", Token.Type.CONTENT},
+            {"\n", Token.Type.NEWLINE},
+            {"seven", Token.Type.CONTENT},
+            {",", Token.Type.DELIMITER},
+            {" ", Token.Type.SPACE},
+            {"eight", Token.Type.CONTENT},
+            {",", Token.Type.DELIMITER},
+            {"but", Token.Type.CONTENT},
+            {" ", Token.Type.SPACE},
+            {"wait:", Token.Type.CONTENT},
+            {"\n", Token.Type.NEWLINE},
+            {"9", Token.Type.CONTENT},
+            {",", Token.Type.DELIMITER},
+            {"10", Token.Type.CONTENT},
+            {",", Token.Type.DELIMITER},
+            {"again!", Token.Type.CONTENT},
+            {"\n", Token.Type.NEWLINE},
+        };
+        lexer = makeLexer(TestText.poem128);
+        long position = 0;
+        long line = 1;
+        int column = 1;
+        int tokenIndex = 0;
+        for (Token token : lexer) {
+            String text = (String) tokens[tokenIndex][0];
+            Token.Type type = (Token.Type) tokens[tokenIndex][1];
+            checkToken(text, type, position, text.length(),
+                       line, column, token, tokenIndex);
+            position += text.length();
+            if (type == Token.Type.NEWLINE) {
+                line++;
+                column = 1;
+            } else {
+                column += text.length();
+            }
+            tokenIndex++;
+        }
+        assertEquals(tokens.length, tokenIndex);
+        assertNull(lexer.readToken());
+    }
 }
