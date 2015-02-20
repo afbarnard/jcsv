@@ -10,23 +10,24 @@ junitJar := $(firstword $(junitJar))
 endif
 
 # Compiler options (e.g. -source 5)
-javacOpts := -Xlint
+javacOpts := -source 7 -target 7 -Xlint -bootclasspath /usr/lib/jvm/jre-1.7.0/lib/rt.jar
 
 # Project layout
 javaSrcDir := src
 javaTstDir := src
 javaPkgDir := com/github/afbarnard/jcsv
+javaBldDir := bld
 
 # Java class path
-classpath := $(CURDIR)/$(javaSrcDir):$(junitJar)
+classpath := $(CURDIR)/$(javaBldDir):$(junitJar)
 
 # Java sources
 javaSrcFiles := $(shell find $(javaSrcDir) -name '*.java' -not -name '*Test.java' | sort)
 javaTstFiles := $(shell find $(javaTstDir) -name '*Test.java' | sort)
 
 # Java classes
-javaSrcClasses := $(javaSrcFiles:.java=.class)
-javaTstClasses := $(javaTstFiles:.java=.class)
+javaSrcClasses := $(subst $(javaSrcDir),$(javaBldDir),$(javaSrcFiles:.java=.class))
+javaTstClasses := $(subst $(javaSrcDir),$(javaBldDir),$(javaTstFiles:.java=.class))
 
 # List all the phony targets (targets that are really commands, not files)
 .PHONY: listconfig tests clean allclean
@@ -53,34 +54,40 @@ listconfig:
 	@echo javaTstClasses:
 	@echo -e "$(indent)$(subst $(space),\n$(indent),$(javaTstClasses))"
 
+# Build directory
+$(javaBldDir)/.exists:
+	mkdir -p $(@D)
+	@touch $@
+
 
 ########################################
 # Java
 
 # General Java compilation
-%.class: %.java
-	javac $(javacOpts) -cp $(classpath) $<
+$(javaBldDir)/%.class: $(javaBldDir)/.exists $(javaSrcDir)/%.java
+	javac $(javacOpts) -cp $(classpath) -d $(javaBldDir) $(word 2,$^)
 
 # Dependencies
-$(javaSrcDir)/$(javaPkgDir)/ArrayQueue.class:
-$(javaSrcDir)/$(javaPkgDir)/Dialect.class:
-$(javaSrcDir)/$(javaPkgDir)/Lexer.class: $(addprefix $(javaSrcDir)/$(javaPkgDir)/,ArrayQueue.class Dialect.class StreamBufferChar.class Token.class)
-$(javaSrcDir)/$(javaPkgDir)/StreamBuffer.class:
-$(javaSrcDir)/$(javaPkgDir)/Token.class:
+$(javaBldDir)/$(javaPkgDir)/ArrayQueue.class:
+$(javaBldDir)/$(javaPkgDir)/Dialect.class:
+$(javaBldDir)/$(javaPkgDir)/Lexer.class: $(addprefix $(javaBldDir)/$(javaPkgDir)/,ArrayQueue.class Dialect.class StreamBufferChar.class Token.class)
+$(javaBldDir)/$(javaPkgDir)/StreamBuffer.class:
+$(javaBldDir)/$(javaPkgDir)/StreamBufferChar.class: $(javaSrcDir)/$(javaPkgDir)/StreamBufferChar.java
+$(javaBldDir)/$(javaPkgDir)/Token.class:
 
 # Tests' dependencies.  These have to be listed explicitly (not a
 # pattern rule) for make to recognize and use them.
-$(javaSrcDir)/$(javaPkgDir)/ArrayQueueTest.class: $(javaSrcDir)/$(javaPkgDir)/ArrayQueue.class
-$(javaSrcDir)/$(javaPkgDir)/LexerTest.class: $(addprefix $(javaSrcDir)/$(javaPkgDir)/,Lexer.class TestText.class)
-$(javaSrcDir)/$(javaPkgDir)/StreamBufferTest.class: $(javaSrcDir)/$(javaPkgDir)/StreamBuffer.class
-$(javaSrcDir)/$(javaPkgDir)/TestText.class:
+$(javaBldDir)/$(javaPkgDir)/ArrayQueueTest.class: $(javaBldDir)/$(javaPkgDir)/ArrayQueue.class
+$(javaBldDir)/$(javaPkgDir)/LexerTest.class: $(addprefix $(javaBldDir)/$(javaPkgDir)/,Lexer.class TestText.class)
+$(javaBldDir)/$(javaPkgDir)/StreamBufferTest.class: $(javaBldDir)/$(javaPkgDir)/StreamBuffer.class
+$(javaBldDir)/$(javaPkgDir)/TestText.class:
 
 #####
 # JUnit
 
 # Run unit tests
 tests: $(javaTstClasses)
-	java -cp $(classpath) org.junit.runner.JUnitCore $(subst /,.,$(subst $(javaSrcDir)/,,$(javaTstClasses:.class=)))
+	java -cp $(classpath) org.junit.runner.JUnitCore $(subst /,.,$(subst $(javaBldDir)/,,$(javaTstClasses:.class=)))
 
 #####
 # Primitive versions of generic classes
@@ -103,5 +110,5 @@ clean:
 
 # Named allclean to distinguish from clean* when typing
 allclean: clean
-	@rm -f $(javaSrcDir)/$(javaPkgDir)/StreamBufferChar.java
+	@rm -R $(javaBldDir) $(javaSrcDir)/$(javaPkgDir)/StreamBufferChar.java
 	@find -name '*~' -delete
