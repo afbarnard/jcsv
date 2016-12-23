@@ -7,6 +7,7 @@ package com.github.afbarnard.jcsv;
 
 import java.util.Arrays;
 import java.util.NoSuchElementException;
+import java.util.function.Supplier;
 
 /**
  * A sliding view of a sequence (or stream) with random access to the
@@ -38,15 +39,27 @@ public class StreamBuffer<E> {
      */
     private long upper = 0;
 
+    /** An allocator for buffer elements. */
+    private Supplier<E> allocator;
+
     public boolean debug = false;
 
-    public StreamBuffer() {
-        this(1000);
+    public StreamBuffer(int initialCapacity, Supplier<E> allocator) {
+        buffer = new Object[initialCapacity];
+        this.allocator = allocator;
+        // All the number fields start at zero
     }
 
     public StreamBuffer(int initialCapacity) {
-        buffer = new Object[initialCapacity];
-        // All the numbers start at zero
+        this(initialCapacity, null);
+    }
+
+    public StreamBuffer(Supplier<E> allocator) {
+        this(1000, allocator);
+    }
+
+    public StreamBuffer() {
+        this(1000, null);
     }
 
     public int capacity() {
@@ -57,6 +70,10 @@ public class StreamBuffer<E> {
         return (int)(upper - lower);
     }
 
+    //public int freeSize() {
+    //    return buffer.length - (int)(upper - lower);
+    //}
+
     public long lower() {
         return lower;
     }
@@ -66,7 +83,7 @@ public class StreamBuffer<E> {
     }
 
     public void put(E element) {
-        debug("put()", upper);
+        debug("put(E)", upper);
         // Make sure there is room
         if ((int)(upper - lower) >= buffer.length) {
             growBuffer(buffer.length + 1);
@@ -76,6 +93,24 @@ public class StreamBuffer<E> {
         buffer[bufferIndex(upper)] = element;
         upper++;
     }
+
+    // start reference types only
+    public E put() {
+        debug("put()", upper);
+        // Make sure there is room
+        if ((int)(upper - lower) >= buffer.length) {
+            growBuffer(buffer.length + 1);
+        }
+        // Create an element if needed
+        int upperIndex = bufferIndex(upper);
+        if (buffer[upperIndex] == null && allocator != null) {
+            buffer[upperIndex] = allocator.get();
+        }
+        upper++;
+        // Return the element
+        return buffer(upperIndex);
+    }
+    // end reference types only
 
     /**
      * Gets the element with the lowest sequence index and removes it

@@ -47,15 +47,18 @@ public class ArrayQueue<E> {
         return (tailIndex + queue.length - headIndex) % queue.length;
     }
 
-    public int freeSize() {
-        return (headIndex + queue.length - tailIndex - 1) % queue.length;
+    public int capacity() {
+        return queue.length - 1;
     }
 
-    public void put(E element) {
-        if (freeSize() <= 0)
-            throw new IllegalStateException("No free space.");
+    public boolean put(E element) {
+        int nextTailIndex = (tailIndex + 1) % queue.length;
+        // Check if the queue is full
+        if (nextTailIndex == headIndex)
+            return false;
         queue[tailIndex] = element;
-        tailIndex = (tailIndex + 1) % queue.length;
+        tailIndex = nextTailIndex;
+        return true;
     }
 
     @SuppressWarnings("unchecked")

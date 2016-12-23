@@ -10,7 +10,7 @@ junitJar := $(firstword $(junitJar))
 endif
 
 # Compiler options (e.g. -source 5)
-javacOpts := -source 7 -target 7 -Xlint -bootclasspath /usr/lib/jvm/jre-1.7.0/lib/rt.jar
+javacOpts := -source 8 -target 8 -Xlint -bootclasspath /usr/lib/jvm/jre-1.8.0/lib/rt.jar
 
 # Project layout
 javaSrcDir := src
@@ -70,7 +70,7 @@ $(javaBldDir)/%.class: $(javaBldDir)/.exists $(javaSrcDir)/%.java
 # Dependencies
 $(javaBldDir)/$(javaPkgDir)/ArrayQueue.class:
 $(javaBldDir)/$(javaPkgDir)/Dialect.class:
-$(javaBldDir)/$(javaPkgDir)/Lexer.class: $(addprefix $(javaBldDir)/$(javaPkgDir)/,ArrayQueue.class Dialect.class StreamBufferChar.class Token.class)
+$(javaBldDir)/$(javaPkgDir)/Lexer.class: $(addprefix $(javaBldDir)/$(javaPkgDir)/,ArrayQueue.class Dialect.class StreamBufferChar.class StreamBuffer.class Token.class)
 $(javaBldDir)/$(javaPkgDir)/StreamBuffer.class:
 $(javaBldDir)/$(javaPkgDir)/StreamBufferChar.class: $(javaSrcDir)/$(javaPkgDir)/StreamBufferChar.java
 $(javaBldDir)/$(javaPkgDir)/Token.class:
@@ -92,13 +92,15 @@ tests: $(javaTstClasses)
 #####
 # Primitive versions of generic classes
 
+# Remove parts that only make sense for reference types
 # Name, constructors: 'StreamBuffer(<E>)?' -> 'StreamBufferChar'
 # Type: '?E?' -> '?char?'
 # Array: 'Object[' -> 'char['
 # Remove unnecessary suppression of unchecked cast.
 # Remove redundant cast.
+# 'Supplier<char>' -> 'Supplier<Char>'
 $(javaSrcDir)/$(javaPkgDir)/StreamBufferChar.java: $(javaSrcDir)/$(javaPkgDir)/StreamBuffer.java
-	sed -e 's/StreamBuffer\(<E>\)\?/StreamBufferChar/' -e 's/\(\W\)E\(\W\)/\1char\2/' -e 's/Object\[/char[/g' -e '/@SuppressWarnings("unchecked")/ d' -e 's/(char)//' $< > $@
+	sed -e '/start reference types only/,/end reference types only/ d' -e 's/StreamBuffer\(<E>\)\?/StreamBufferChar/' -e 's/\(\W\)E\(\W\)/\1char\2/' -e 's/Object\[/char[/g' -e '/@SuppressWarnings("unchecked")/ d' -e 's/(char)//' -e 's/Supplier<char>/Supplier<Character>/' $< > $@
 
 
 ########################################
@@ -110,5 +112,5 @@ clean:
 
 # Named allclean to distinguish from clean* when typing
 allclean: clean
-	@rm -R $(javaBldDir) $(javaSrcDir)/$(javaPkgDir)/StreamBufferChar.java
+	@-rm -R $(javaBldDir) $(javaSrcDir)/$(javaPkgDir)/StreamBufferChar.java
 	@find -name '*~' -delete

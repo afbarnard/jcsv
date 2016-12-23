@@ -21,15 +21,13 @@ public class Lexer implements Iterator<Token>, Iterable<Token> {
     private Dialect dialect;
     private Reader reader;
     private StreamBufferChar buffer;
-    private Deque<Token> tokenPool;
-    private ArrayQueue<Token> tokenQueue;
+    private StreamBuffer<Token> tokens;
 
     public Lexer(Dialect dialect, Reader reader, int bufferSize, int queueSize) {
         this.dialect = dialect;
         this.reader = reader;
         buffer = new StreamBufferChar(bufferSize);
-        tokenPool = new ArrayDeque<Token>(100);
-        tokenQueue = new ArrayQueue<Token>(queueSize);
+        tokens = new StreamBuffer<Token>(queueSize, () -> new Token());
     }
 
     public Lexer(Dialect dialect, Reader reader) {
@@ -53,7 +51,7 @@ public class Lexer implements Iterator<Token>, Iterable<Token> {
      */
     public boolean hasNext() {
         // Queue could be empty with more input, so also check for EOF
-        return tokenQueue.size() > 0 || charCode != -1;
+        return tokens.size() > 0 || charCode != -1;
     }
 
     /**
@@ -67,14 +65,14 @@ public class Lexer implements Iterator<Token>, Iterable<Token> {
      */
     public Token next() {
         // Read more tokens if needed
-        if (tokenQueue.size() <= 0) {
+        if (tokens.size() <= 0) { // TODO change to a buffer proportion?
             try {
                 readTokens();
             } catch (IOException e) {
                 // FIXME
             }
         }
-        return tokenQueue.get();
+        return tokens.get();
     }
 
     public void remove() {
@@ -164,7 +162,7 @@ public class Lexer implements Iterator<Token>, Iterable<Token> {
      */
     public void readTokens() throws IOException {
         // Quit if at EOF or if there is no space in the token queue
-        if (charCode == -1 || tokenQueue.freeSize() <= 0) {
+        if (charCode == -1 || tokens.freeSize() <= 0) {
             return;
         }
         // OK, there are characters to be read and space to record the
@@ -182,7 +180,7 @@ public class Lexer implements Iterator<Token>, Iterable<Token> {
 
         // Loop to process characters into tokens until the queue is
         // full or EOF
-        while (charCode >= 0 && tokenQueue.freeSize() > 0) {
+        while (charCode >= 0 && tokens.freeSize() > 0) {
             // Convert the code and put the character in the buffer
             thisChar = (char) charCode;
             buffer.put(thisChar);
@@ -261,20 +259,13 @@ public class Lexer implements Iterator<Token>, Iterable<Token> {
      */
     private void processToken() {
         // Get a token to use
-        Token token;
-        if (tokenPool.isEmpty()) {
-            token = new Token();
-        } else {
-            token = tokenPool.pop();
-        }
+        Token token = tokens.put();
         // Populate the token
         token.type = tokenType;
         token.position = tokenPosition;
         token.length = (int)(charPosition - tokenPosition);
         token.line = line;
         token.column = (int)(tokenPosition - lineStartPosition + 1);
-        // Add it to the queue
-        tokenQueue.put(token);
         // Update input location
         if (tokenType == Token.Type.NEWLINE) {
             line++;
@@ -288,7 +279,7 @@ public class Lexer implements Iterator<Token>, Iterable<Token> {
 
     public Token readToken() {
         // Read more tokens if needed
-        if (tokenQueue.size() <= 0) {
+        if (tokens.size() <= 0) {
             try {
                 readTokens();
             } catch (IOException e) {
@@ -296,15 +287,14 @@ public class Lexer implements Iterator<Token>, Iterable<Token> {
             }
         }
         // Return the next token or null if none
-        if (tokenQueue.size() > 0) {
-            return tokenQueue.get();
+        if (tokens.size() > 0) {
+            return tokens.get();
         } else {
             return null;
         }
     }
 
     public void free(Token token) {
-        tokenPool.push(token);
         free(token.position + token.length - 1);
     }
 
